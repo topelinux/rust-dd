@@ -1,5 +1,5 @@
-extern crate futures;
 extern crate bytes;
+extern crate futures;
 extern crate getopts;
 extern crate tokio;
 
@@ -8,9 +8,9 @@ use futures::future::{loop_fn, Loop};
 use getopts::Options;
 use std::env;
 use std::str::FromStr;
+use std::time::Instant;
 use tokio::fs::File;
 use tokio::prelude::*;
-use std::time::{Instant};
 
 fn usage(opts: Options) {
     let brief = format!("Usage: dd [options] <INFILE> <OUTFILE>");
@@ -33,7 +33,6 @@ fn main() {
         return;
     }
 
-
     let bs = match matches.opt_str("b") {
         Some(v) => usize::from_str(v.as_str()).unwrap(),
         None => 512,
@@ -52,45 +51,51 @@ fn main() {
 
     let now = Instant::now();
     let task = File::open(String::from(infile.as_str()))
-                .and_then(move |mut file| {
-                    loop_fn((0, 0), move |(mut n, mut readed)| {
-                            file.read_buf(&mut dbs)
-                            .and_then(|num| {
-                                match num {
-                                    Async::Ready(n) => readed += n,
+        .and_then(move |mut file| {
+            loop_fn((0, 0), move |(mut n, mut readed)| {
+                file.read_buf(&mut dbs)
+                    .and_then(|num| {
+                        match num {
+                            Async::Ready(n) => readed += n,
+                            _ => panic!(),
+                        };
+                        Ok(readed)
+                    })
+                    .and_then(|num| {
+                        if num == bs {
+                            dbs.truncate(bs);
+                            w_file
+                                .poll_write(&dbs)
+                                .map(|res| match res {
+                                    Async::Ready(n) => {
+                                        if n != bs {
+                                            panic!()
+                                        }
+                                    }
                                     _ => panic!(),
-                                };
-                                Ok(readed)
-                            })
-                            .and_then(|num| {
-                                if num == bs {
-                                    dbs.truncate(bs);
-                                    w_file.poll_write(&dbs).map(|res| {
-                                        match res {
-                                                Async::Ready(n) => {
-                                                    if n != bs {
-                                                        panic!()
-                                                    }
-                                                },
-                                                _ => panic!()
-                                            }
-                                    })
-                                    .map_err(|err| eprintln!("IO error: {:?}", err)).unwrap();
-                                }
-                                Ok(num)
-                            })
-                            .and_then(|num| {
-                                if num == bs {
-                                    n += 1;
-                                }
-                                if n == count {
-                                    return w_file.poll_flush().and_then(|_| Ok(Loop::Break((n, num))))
-                                }
-                                Ok(Loop::Continue((n, num)))
-                            })
-                    }).and_then(move |_| { let delta = now.elapsed().as_millis(); println!("Done! use {} msec", delta); Ok(())})
-                })
-                .map_err(|err| eprintln!("IO error: {:?}", err));
+                                })
+                                .map_err(|err| eprintln!("IO error: {:?}", err))
+                                .unwrap();
+                        }
+                        Ok(num)
+                    })
+                    .and_then(|num| {
+                        if num == bs {
+                            n += 1;
+                        }
+                        if n == count {
+                            return w_file.poll_flush().and_then(|_| Ok(Loop::Break((n, num))));
+                        }
+                        Ok(Loop::Continue((n, num)))
+                    })
+            })
+            .and_then(move |_| {
+                let delta = now.elapsed().as_millis();
+                println!("Done! use {} msec", delta);
+                Ok(())
+            })
+        })
+        .map_err(|err| eprintln!("IO error: {:?}", err));
 
     tokio::run(task);
 }
