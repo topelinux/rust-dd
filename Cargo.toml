@@ -1,0 +1,11 @@
+[package]
+name = "rust-dd"
+version = "0.1.0"
+authors = ["Jie Yang <topelinux@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+futures = "0.1.11"
+tokio = "0.1.15"
+bytes = "0.4.11"
+getopts = "0.2"
