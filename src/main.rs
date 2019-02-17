@@ -1,19 +1,18 @@
 extern crate bytes;
 extern crate futures;
 extern crate getopts;
-extern crate tokio;
 extern crate pbr;
-
+extern crate tokio;
 
 use bytes::BytesMut;
 use futures::future::{loop_fn, Loop};
 use getopts::Options;
+use pbr::ProgressBar;
 use std::env;
 use std::str::FromStr;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::prelude::*;
-use pbr::ProgressBar;
 
 fn usage(opts: Options) {
     let brief = format!("Usage: dd [options] <INFILE> <OUTFILE>");
@@ -57,24 +56,32 @@ fn main() {
     let now = Instant::now();
     let task = File::open(String::from(infile.as_str()))
         .and_then(move |mut file| {
+            let mut eof = false;
             loop_fn((0, 0), move |(mut n, mut readed)| {
                 file.read_buf(&mut dbs)
                     .and_then(|num| {
-                        match num {
-                            Async::Ready(n) => readed += n,
+                        let n = match num {
+                            Async::Ready(n) => n,
                             _ => panic!(),
                         };
-                        Ok(readed)
+                        readed += n;
+                        if n == 0 {
+                            eof = true;
+                        }
+                        Ok(n)
                     })
                     .and_then(|num| {
-                        if num == bs {
-                            dbs.truncate(bs);
+                        if readed == bs || eof {
+                            dbs.truncate(readed);
                             w_file
                                 .poll_write(&dbs)
-                                .map(|res| match res {
+                                .map(|res|
+                                    match res {
                                     Async::Ready(n) => {
-                                        if n != bs {
+                                        if n != readed {
                                             panic!()
+                                        } else {
+                                            dbs.clear();
                                         }
                                     }
                                     _ => panic!(),
@@ -85,15 +92,19 @@ fn main() {
                         Ok(num)
                     })
                     .and_then(|num| {
-                        if num == bs {
+                        if readed < bs && !eof {
+                            return Ok(Loop::Continue((n, num)));
+                        }
+
+                        if readed == bs {
                             n += 1;
                             pb.inc();
                         }
-                        if n == count {
+                        if n == count || eof {
                             pb.finish();
                             return w_file.poll_flush().and_then(|_| Ok(Loop::Break((n, num))));
                         }
-                        Ok(Loop::Continue((n, num)))
+                        Ok(Loop::Continue((n, 0)))
                     })
             })
             .and_then(move |_| {
