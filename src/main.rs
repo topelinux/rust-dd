@@ -2,6 +2,8 @@ extern crate bytes;
 extern crate futures;
 extern crate getopts;
 extern crate tokio;
+extern crate pbr;
+
 
 use bytes::BytesMut;
 use futures::future::{loop_fn, Loop};
@@ -11,6 +13,7 @@ use std::str::FromStr;
 use std::time::Instant;
 use tokio::fs::File;
 use tokio::prelude::*;
+use pbr::ProgressBar;
 
 fn usage(opts: Options) {
     let brief = format!("Usage: dd [options] <INFILE> <OUTFILE>");
@@ -43,6 +46,8 @@ fn main() {
         Some(v) => usize::from_str(v.as_str()).unwrap(),
         None => 1,
     };
+
+    let mut pb = ProgressBar::new(count as u64);
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
@@ -82,8 +87,10 @@ fn main() {
                     .and_then(|num| {
                         if num == bs {
                             n += 1;
+                            pb.inc();
                         }
                         if n == count {
+                            pb.finish();
                             return w_file.poll_flush().and_then(|_| Ok(Loop::Break((n, num))));
                         }
                         Ok(Loop::Continue((n, num)))
