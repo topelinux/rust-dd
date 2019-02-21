@@ -8,14 +8,21 @@ use bytes::BytesMut;
 use futures::future::{loop_fn, Loop};
 use getopts::Options;
 use pbr::ProgressBar;
-use std::env;
-use std::str::FromStr;
-use std::time::Instant;
-use tokio::fs::File;
-use tokio::prelude::*;
+use std::{
+    env,
+    str::FromStr,
+    time::Instant,
+    fs,
+    cmp,
+};
+
+use tokio::{
+    fs::File,
+    prelude::*,
+};
 
 fn usage(opts: Options) {
-    let brief = format!("Usage: dd [options] <INFILE> <OUTFILE>");
+    let brief = ("Usage: dd [options] <INFILE> <OUTFILE>").to_string();
     print!("{}", opts.usage(&brief));
 }
 
@@ -45,12 +52,14 @@ fn main() {
         Some(v) => usize::from_str(v.as_str()).unwrap(),
         None => 1,
     };
-
-    let mut pb = ProgressBar::new(count as u64);
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let std_file = std::fs::File::create(outfile.as_str()).unwrap();
+    let metadata = std::fs::metadata(infile.as_str()).unwrap();
+    let real_count = (metadata.len() as usize + bs) / bs;
+    let status_count = cmp::min(count, real_count);
+    let mut pb = ProgressBar::new(status_count as u64);
+    let std_file = fs::File::create(outfile.as_str()).unwrap();
     let mut w_file = File::from_std(std_file);
 
     let now = Instant::now();
