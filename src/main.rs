@@ -55,10 +55,14 @@ fn main() {
     let infile = &matches.free[0];
     let outfile = &matches.free[1];
 
-    let metadata = std::fs::metadata(infile.as_str()).unwrap();
-    let real_count = (metadata.len() as usize + bs) / bs;
-    let status_count = cmp::min(count, real_count);
-    let mut pb = ProgressBar::new(status_count as u64);
+    let metadata = fs::metadata(infile.as_str()).unwrap();
+    let mut progess_count = count;
+    if metadata.file_type().is_file() {
+        let real_count = (metadata.len() as usize + bs) / bs;
+        progess_count = cmp::min(count, real_count)
+    }
+
+    let mut pb = ProgressBar::new(progess_count as u64);
     let std_file = fs::File::create(outfile.as_str()).unwrap();
     let mut w_file = File::from_std(std_file);
 
